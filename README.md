@@ -4,6 +4,10 @@
 
 ## 双击启动
 
+直接双击项目根目录的 `index.html` 即可使用，无需安装 Node.js 或联网。此文件包含应用所需的脚本与样式；本地文件模式下，浏览器可能限制剪贴板、分享或本地设置保存。使用 GitHub Pages 时，访问线上地址即可。
+
+如果要运行开发服务器（例如修改源码并实时预览），请使用下面的平台启动脚本：
+
 先安装 [Node.js](https://nodejs.org/) 22 或更新版本（包含 npm）。下载或克隆项目后，进入解压后的项目文件夹：
 
 - **Windows**：双击 `start-windows.bat`。
@@ -24,7 +28,7 @@ npm run dev
 
 ```sh
 npm test          # 运行核心逻辑测试
-npm run build     # 类型检查并构建到 dist/
+npm run build     # 类型检查、构建到 dist/，并更新根目录离线版 index.html
 npm run preview   # 本地预览生产构建
 ```
 
@@ -44,6 +48,8 @@ ICS 是一次性导入文件，不会自动同步未来新增的年份。日历�
 
 香港天文台指出，远期新月接近午夜时，计算不确定性可能导致农历月份日期相差一天，例如 2057、2089 和 2097 年的部分新月；详见其[公历与农历日期对照表说明](https://www.hko.gov.hk/en/gts/time/conversion.htm)。长期安排可在临近日期时重新核对。
 
+修改源码后应运行 `npm run build`，同步更新根目录的单文件 `index.html`；开发服务器会从 `app.html` 加载源码，GitHub Pages 则部署构建结果中的单文件版本。
+
 ## 部署到 GitHub Pages
 
 仓库包含 `.github/workflows/deploy.yml`：推送到 `main` 或手动运行工作流时，先安装依赖、测试和构建，再部署 `dist/`。在仓库 **Settings → Pages** 中，将构建来源选择为 **GitHub Actions**。Vite 的 `base: './'` 使用相对资源路径，适用于仓库子路径。创建仓库、推送和启用 Pages 需要自行完成。
@@ -57,6 +63,8 @@ ICS 是一次性导入文件，不会自动同步未来新增的年份。日历�
 
 ## 代码结构
 
+- `index.html`：构建生成的自包含离线页面，可直接双击打开。
+- `app.html`、`scripts/build-standalone.mjs`：开发入口和离线页面生成脚本。
 - `src/lunar.ts`：日期校验、双向转换及未来年份推算。
 - `src/ics.ts`：事件时间、时区及 RFC 5545 内容生成。
 - `src/main.tsx`、`src/style.css`：界面、交互与样式。
