@@ -6,6 +6,7 @@ export interface IcsEvent {
 
 export interface IcsConfig {
   title: string
+  calendarName: string
   description: string
   allDay: boolean
   startTime: string
@@ -119,7 +120,8 @@ function makeId(): string {
 /** Generate one independent VEVENT per selected solar date, without RRULE. */
 export function generateICS(events: IcsEvent[], config: IcsConfig, now: Date = new Date()): string {
   if (!Array.isArray(events) || events.length === 0) throw new Error('请至少选择一个可导出的日期。')
-  if (!config.title.trim()) throw new Error('请输入事件名称。')
+  if (!config.title.trim()) throw new Error('请输入日程名称。')
+  if (!config.calendarName.trim()) throw new Error('请输入日历名称。')
   if (config.reminderMinutes !== null && (!Number.isSafeInteger(config.reminderMinutes) || config.reminderMinutes < 0 || config.reminderMinutes > 5256000)) {
     throw new Error('提醒时间须为 0 到 5256000 分钟之间的整数。')
   }
@@ -130,7 +132,8 @@ export function generateICS(events: IcsEvent[], config: IcsConfig, now: Date = n
   }
   const stamp = formatUtc(now)
   const id = makeId()
-  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lunar Calendar//Lunar Calendar//ZH-CN', 'CALSCALE:GREGORIAN']
+  const name = escapeText(config.calendarName.trim())
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Lunar Calendar//Lunar Calendar//ZH-CN', 'CALSCALE:GREGORIAN', `NAME:${name}`, `X-WR-CALNAME:${name}`]
   events.forEach((event, index) => {
     parseDate(event.date)
     lines.push('BEGIN:VEVENT', `UID:${id}-${index}@lunar-calendar.local`, `DTSTAMP:${stamp}`)
