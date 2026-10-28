@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getLunarMonths, lunarToSolar, solarToLunar, predictDates, MIN_SOLAR, MAX_SOLAR } from './lunar';
+import { getLunarMonths, lunarToSolar, solarToLunar, predictDates, anniversaryRuleFromDate, MIN_SOLAR, MAX_SOLAR } from './lunar';
 
 describe('农历换算', () => {
   // Samples cross-checked against Hong Kong Observatory's published tables.
@@ -41,6 +41,11 @@ describe('农历换算', () => {
 
 describe('农历纪念日推算', () => {
   const base = {startYear:2025,month:1,day:1,isLeap:false,years:4,leapPolicy:'skip' as const,dayPolicy:'skip' as const};
+  it('从转换日期进入推算时使用当前农历年份并保留月日和闰月', () => {
+    const anniversary = {year: 1993, month: 2, day: 12, isLeap: true};
+    expect(anniversaryRuleFromDate(anniversary, {year:2026,month:2,day:16})).toEqual({startYear:2025,month:2,day:12,isLeap:true});
+    expect(anniversaryRuleFromDate(anniversary, {year:2026,month:2,day:17})).toEqual({startYear:2026,month:2,day:12,isLeap:true});
+  });
   it('按连续农历年份计算', () => {
     const result = predictDates(base);
     expect(result.map(r => r.info?.solar)).toEqual([{year:2025,month:1,day:29},{year:2026,month:2,day:17},{year:2027,month:2,day:6},{year:2028,month:1,day:26}]);

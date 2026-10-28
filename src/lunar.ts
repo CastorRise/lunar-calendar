@@ -63,6 +63,10 @@ export function lunarToSolar(lunar: LunarDate): LunarInfo {
   if (!isInt(lunar.day) || lunar.day < 1 || lunar.day > m.days) throw new Error(`${m.label}只有 ${m.days} 天，请选择有效日期。`);
   return toInfo(Lunar.fromYmd(lunar.year, lunar.isLeap ? -lunar.month : lunar.month, lunar.day));
 }
+/** Start a converted anniversary in the current China-local lunar year. */
+export function anniversaryRuleFromDate(lunar: LunarDate, today: SolarDate): Pick<PredictionOptions, 'startYear' | 'month' | 'day' | 'isLeap'> {
+  return { startYear: solarToLunar(today).lunar.year, month: lunar.month, day: lunar.day, isLeap: lunar.isLeap };
+}
 export function predictDates(options: PredictionOptions): Prediction[] {
   const { startYear, month, day, isLeap, years, leapPolicy, dayPolicy } = options;
   checkYear(startYear);
