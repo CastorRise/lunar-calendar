@@ -6,6 +6,7 @@
   --accent: #2568c8; --accent-hover: #1959b1; --accent-soft: #edf4ff; --accent-line: #cbdcf7;
   --success: #3c7860; --success-bg: #edf6f1; --warning: #8b631c; --warning-bg: #fff5e4;
   --danger: #b53e43; --danger-bg: #fff0f0; --shadow: 0 5px 24px #20293604;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%23657284' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 :root.dark {
   color-scheme: dark; --background: #14191f; --surface: #1d242d; --surface-subtle: #242d38; --input: #202934;
@@ -13,6 +14,7 @@
   --accent: #8ab7ff; --accent-hover: #b5d1ff; --accent-soft: #253a57; --accent-line: #3d5e89;
   --success: #99d4b3; --success-bg: #263e33; --warning: #edc378; --warning-bg: #463b26;
   --danger: #f3afb2; --danger-bg: #452b30; --shadow: none;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%239aa8ba' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 * { box-sizing: border-box; }
 body { margin: 0; min-width: 320px; }
@@ -24,7 +26,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 button svg, .notice svg, .badge svg { flex-shrink: 0; }
 input, select, textarea { min-width: 0; }
 input:not([type='checkbox']), select, textarea { width: 100%; min-height: 46px; border: 1px solid var(--line); border-radius: 10px; background: var(--input); color: var(--text); padding: 11px 13px; line-height: 1.4; }
-select { cursor: pointer; padding-right: 27px; }
+select { appearance: none; -webkit-appearance: none; cursor: pointer; padding-right: 42px; background-image: var(--select-arrow); background-repeat: no-repeat; background-position: right 14px center; background-size: 16px 16px; }
 input[type='checkbox'] { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); cursor: pointer; flex: none; }
 textarea { min-height: 100px; resize: vertical; }
 p { margin: 0; }
@@ -40,7 +42,7 @@ h3 { font-size: 19px; }
 .header-tools { display: flex; align-items: center; gap: 22px; }
 .today-label { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .theme-control { display: flex; align-items: center; gap: 8px; color: var(--secondary); }
-.theme-control select { width: auto; font-size: 12px; min-height: 38px; padding: 8px 10px; background: var(--surface); border-radius: 9px; }
+.theme-control select { width: auto; font-size: 12px; min-height: 38px; padding: 8px 34px 8px 10px; background-color: var(--surface); background-position: right 10px center; border-radius: 9px; }
 .workflow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--line); background: var(--surface); padding: 5px; border-radius: 17px; gap: 5px; margin-bottom: 26px; }
 .workflow-step { min-width: 0; display: flex; align-items: center; text-align: left; gap: 12px; padding: 13px 18px; border-radius: 12px; background: none; position: relative; }
 .workflow-step:hover { background: var(--surface-subtle); }
@@ -135,9 +137,9 @@ dd { margin: 0; font-size: 13px; font-weight: 550; text-align: right; overflow-w
 .result-footer strong { font-size: 13px; font-weight: 600; }
 .result-footer .text-muted { font-size: 11px; margin-top: 4px; }
 .icon-button { min-width: 35px; min-height: 35px; display: grid; place-items: center; background: var(--surface-subtle); border-radius: 9px; color: var(--secondary); }
-.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 0 10px; }
+.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 20px 0 10px; }
 .calendar-selectors { display: flex; align-items: center; gap: 7px; }
-.calendar-selectors select { width: auto; min-height: 35px; font-size: 13px; border-color: transparent; background: none; font-weight: 600; padding: 7px 5px; }
+.calendar-selectors select { width: auto; min-height: 35px; font-size: 13px; border-color: transparent; background-color: transparent; background-position: right 8px center; font-weight: 600; padding: 7px 30px 7px 5px; }
 .calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
 .calendar-weekday { text-align: center; padding: 11px 0; color: var(--muted); font-size: 11px; }
 .calendar-day { min-height: 51px; display: flex; align-items: center; justify-content: center; flex-direction: column; background: none; border-radius: 9px; font-size: 13px; color: var(--secondary); }
