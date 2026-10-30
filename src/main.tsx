@@ -1,61 +1,226 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CalendarDays, CalendarRange, ArrowRight, Copy, Sparkles, Info, Download, Share2, Clock3, ChevronLeft, ChevronRight, List, Grid2X2, SunMoon } from 'lucide-react'
-import { solarToLunar, lunarToSolar, getLunarMonths, predictDates, anniversaryRuleFromDate, MIN_YEAR, MAX_YEAR, type LunarDate } from './lunar'
+import { ArrowLeft, ArrowRight, Bell, CalendarDays, CalendarRange, Check, ChevronDown, Clock3, Copy, Download, Info, LockKeyhole, Moon, Share2, SunMoon, X } from 'lucide-react'
+import { solarToLunar, lunarToSolar, getLunarMonths, predictDates, anniversaryRuleFromDate, MIN_YEAR, MAX_YEAR, MIN_SOLAR, MAX_SOLAR, MONTH_NAMES, DAY_NAMES, type LunarDate } from './lunar'
 import { generateICS, type IcsConfig } from './ics'
+import { chineseNow, dateString, loadSettings, parseSolar, SETTINGS_STORAGE_KEY, type Settings } from './settings'
+import { PredictionResults } from './PredictionResults'
 import './style.css'
 
 type Tab = 'convert' | 'future' | 'export'
-type Settings = { solar:string; time:string; lunar:LunarDate; startYear:number; month:number; day:number; isLeap:boolean; years:number; leapPolicy:'skip'|'regular'; dayPolicy:'skip'|'last'; theme:'system'|'light'|'dark'; config:IcsConfig }
-const storageKey = 'lunar-calendar-settings-v1'
-const pad=(n:number)=>String(n).padStart(2,'0')
-const dateString=(d:{year:number;month:number;day:number})=>`${d.year}-${pad(d.month)}-${pad(d.day)}`
-const chineseNow=()=>{const parts=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(new Date()); const p=(key:string)=>parts.find(x=>x.type===key)?.value ?? '00'; return {solar:`${p('year')}-${p('month')}-${p('day')}`,time:`${p('hour')}:${p('minute')}`}}
-const parseSolar=(s:string)=>{if(!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw Error('请选择完整的公历日期。'); const [year,month,day]=s.split('-').map(Number); return {year,month,day}}
-const defaults=():Settings=>{const now=chineseNow(); let lunar:LunarDate={year:2026,month:1,day:1,isLeap:false}; try {lunar=solarToLunar(parseSolar(now.solar)).lunar} catch { /* leave a supported default */ } return {...now,lunar,startYear:lunar.year,month:lunar.month,day:lunar.day,isLeap:lunar.isLeap,years:10,leapPolicy:'skip',dayPolicy:'skip',theme:'system',config:{title:'农历生日',calendarName:'农历日历',description:'',allDay:true,startTime:'09:00',endTime:'10:00',timeZone:'Asia/Shanghai',reminderMinutes:null}}}
-function loadSettings():Settings { const d=defaults(); try {const x=JSON.parse(localStorage.getItem(storageKey) || '{}'); if(!x || typeof x!=='object') return d; const l=x.lunar && typeof x.lunar==='object'?x.lunar:{}; const c=x.config && typeof x.config==='object'?x.config:{}; const str=(v:unknown,f:string)=>typeof v==='string'?v:f; const num=(v:unknown,f:number)=>typeof v==='number'&&Number.isFinite(v)?v:f; const bool=(v:unknown,f:boolean)=>typeof v==='boolean'?v:f; return {solar:str(x.solar,d.solar),time:str(x.time,d.time),lunar:{year:num(l.year,d.lunar.year),month:num(l.month,d.lunar.month),day:num(l.day,d.lunar.day),isLeap:bool(l.isLeap,d.lunar.isLeap)},startYear:num(x.startYear,d.startYear),month:num(x.month,d.month),day:num(x.day,d.day),isLeap:bool(x.isLeap,d.isLeap),years:num(x.years,d.years),leapPolicy:x.leapPolicy==='regular'?'regular':'skip',dayPolicy:x.dayPolicy==='last'?'last':'skip',theme:x.theme==='light'||x.theme==='dark'?x.theme:'system',config:{title:str(c.title,d.config.title),calendarName:str(c.calendarName,d.config.calendarName),description:str(c.description,d.config.description),allDay:bool(c.allDay,d.config.allDay),startTime:str(c.startTime,d.config.startTime),endTime:str(c.endTime,d.config.endTime),timeZone:str(c.timeZone,d.config.timeZone),reminderMinutes:c.reminderMinutes===null||c.reminderMinutes===undefined?null:num(c.reminderMinutes,0)}}} catch {return d} }
-const weekdays=['日','一','二','三','四','五','六']
-const monthNames=['正月','二月','三月','四月','五月','六月','七月','八月','九月','十月','冬月','腊月']
-const dayNames=['初一','初二','初三','初四','初五','初六','初七','初八','初九','初十','十一','十二','十三','十四','十五','十六','十七','十八','十九','二十','廿一','廿二','廿三','廿四','廿五','廿六','廿七','廿八','廿九','三十']
-function Field({label,children,extra}:{label:string;children:React.ReactNode;extra?:React.ReactNode}){return <div className="field"><div className="field-head"><label>{label}</label>{extra}</div>{children}</div>}
-function Heading({icon,title,subtitle}:{icon:React.ReactNode;title:string;subtitle:string}){return <div className="card-heading"><div className="icon">{icon}</div><div><h2>{title}</h2><p>{subtitle}</p></div></div>}
-function App(){
- const [s,setS]=useState(loadSettings); const [tab,setTab]=useState<Tab>('convert'); const [mode,setMode]=useState<'solar'|'lunar'>('solar'); const [view,setView]=useState<'list'|'calendar'>('list'); const [selected,setSelected]=useState<Set<number>>(new Set()); const [calendarYear,setCalendarYear]=useState(0); const [message,setMessage]=useState('');
- const update=(patch:Partial<Settings>)=>setS(x=>({...x,...patch})); const config=(patch:Partial<IcsConfig>)=>setS(x=>({...x,config:{...x.config,...patch}}));
- useEffect(()=>{try{localStorage.setItem(storageKey,JSON.stringify(s))}catch{/* storage may be disabled */}},[s]);
- useEffect(()=>{const media=matchMedia('(prefers-color-scheme: dark)'); const apply=()=>document.documentElement.classList.toggle('dark',s.theme==='dark'||(s.theme==='system'&&media.matches)); apply();media.addEventListener('change',apply);return()=>media.removeEventListener('change',apply)},[s.theme]);
- const conversion=useMemo(()=>{try{if(!s.config.allDay&&!/^([01]\d|2[0-3]):[0-5]\d$/.test(s.time))throw Error('请输入有效时间。');return {value:mode==='solar'?solarToLunar(parseSolar(s.solar)):lunarToSolar(s.lunar),error:''}}catch(e){return {value:null,error:e instanceof Error?e.message:'日期无效，请检查输入。'}}},[s.solar,s.time,s.lunar,s.config.allDay,mode]);
- const months=useMemo(()=>{try{return getLunarMonths(s.lunar.year)}catch{return []}},[s.lunar.year]);
- const prediction=useMemo(()=>{try{return {values:predictDates({startYear:s.startYear,month:s.month,day:s.day,isLeap:s.isLeap,years:s.years,leapPolicy:s.leapPolicy,dayPolicy:s.dayPolicy}),error:''}}catch(e){return {values:[],error:e instanceof Error?e.message:'推算设置无效。'}}},[s.startYear,s.month,s.day,s.isLeap,s.years,s.leapPolicy,s.dayPolicy]);
- useEffect(()=>{setSelected(new Set(prediction.values.filter(x=>x.info).map(x=>x.year)));setCalendarYear(0)},[prediction]);
- const valid=prediction.values.filter(x=>x.info); const chosen=valid.filter(x=>selected.has(x.year));
- const chosenEvents=chosen.map(x=>({date:dateString(x.info!.solar)}));
- let exportError=''; try{generateICS(chosenEvents,s.config)}catch(e){exportError=e instanceof Error?e.message:'无法生成日历文件。'}
- const setLunar=(patch:Partial<LunarDate>)=>{const next={...s.lunar,...patch}; try{const options=getLunarMonths(next.year); let found=options.find(x=>x.month===next.month&&x.isLeap===next.isLeap); if(!found){found=options.find(x=>x.month===next.month&&!x.isLeap);next.isLeap=false} if(found)next.day=Math.min(next.day,found.days)}catch{/* keep value for validation */}update({lunar:next})};
- const switchMode=(target:'solar'|'lunar')=>{if(conversion.value){if(target==='lunar')update({lunar:conversion.value.lunar});else update({solar:dateString(conversion.value.solar)})}setMode(target)};
- const useFuture=()=>{if(!conversion.value)return;try{update(anniversaryRuleFromDate(conversion.value.lunar,parseSolar(chineseNow().solar)));setTab('future')}catch(e){setMessage(e instanceof Error?e.message:'当前日期超出支持范围。')}};
- const copy=async(text:string)=>{try{await navigator.clipboard.writeText(text);setMessage('已复制到剪贴板')}catch{setMessage('复制失败，请检查浏览器权限')}setTimeout(()=>setMessage(''),3000)};
- const download=()=>{try{const data=generateICS(chosenEvents,s.config);const blob=new Blob([data],{type:'text/calendar;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;const safe=s.config.title.replace(/[\\/:*?"<>|]/g,'_').trim()||'农历日历';a.download=`${safe}_${chosen[0]?.year}-${chosen[chosen.length-1]?.year}.ics`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}catch(e){setMessage(e instanceof Error?e.message:'导出失败')}};
- const share=async()=>{try{const data=generateICS(chosenEvents,s.config);const safe=s.config.title.replace(/[\\/:*?"<>|]/g,'_').trim()||'农历日历';const file=new File([data],`${safe}_${chosen[0]?.year}-${chosen[chosen.length-1]?.year}.ics`,{type:'text/calendar'});if(!navigator.canShare?.({files:[file]}))throw Error('当前浏览器不支持分享文件，请使用下载。');await navigator.share({files:[file],title:s.config.title})}catch(e){if(e instanceof Error&&e.name==='AbortError')return;setMessage(e instanceof Error?e.message:'分享失败，请使用下载。')}};
- const solarResult=conversion.value; const currentMonth=months.find(x=>x.month===s.lunar.month&&x.isLeap===s.lunar.isLeap); const dateInputLabel=mode==='solar'?'公历日期':'农历年份';
- const toggle=(year:number)=>setSelected(old=>{const next=new Set(old);next.has(year)?next.delete(year):next.add(year);return next});
- const activeCalendar=valid[Math.min(calendarYear,Math.max(0,valid.length-1))]; const calDate=activeCalendar?.info?.solar; const firstDay=calDate?new Date(Date.UTC(calDate.year,calDate.month-1,1)).getUTCDay():0; const daysInMonth=calDate?new Date(Date.UTC(calDate.year,calDate.month,0)).getUTCDate():0;
- return <div className="app"><div className="shell"><header className="topbar"><div className="brand"><div className="brand-icon"><CalendarDays size={21}/></div><span>农历日历</span></div><div className="top-right"><span>为每一个值得记住的日子</span><SunMoon size={16}/><select className="theme-select" aria-label="外观设置" value={s.theme} onChange={e=>update({theme:e.target.value as Settings['theme']})}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></header>
- <section className="intro"><div><div className="eyebrow">LUNAR CALENDAR</div><h1>把重要的日子，<br className="mobile-break"/>留在日历里。</h1><p>转换农历日期，轻松记录每一年的纪念日。</p></div><div className="today-chip"><CalendarDays size={17}/><span>今天 · {chineseNow().solar.replaceAll('-',' / ')}</span></div></section>
- <nav className="tabs" aria-label="主要功能">{([['convert','日期转换'],['future','未来推算'],['export','日历导出']] as const).map(([key,label])=><button key={key} className={`tab ${tab===key?'active':''}`} onClick={()=>setTab(key)} aria-current={tab===key?'page':undefined}>{label}</button>)}</nav>
- {message&&<div role="status" className="note">{message}</div>}
- {tab==='convert'&&<div className="layout"><section className="card"><Heading icon={<CalendarDays size={19}/>} title="日期转换" subtitle="在公历与农历之间自由切换"/><div className="segmented" role="group" aria-label="转换方向"><button className={mode==='solar'?'active':''} onClick={()=>switchMode('solar')}>公历 → 农历</button><button className={mode==='lunar'?'active':''} onClick={()=>switchMode('lunar')}>农历 → 公历</button></div>
- {mode==='solar'?<Field label={dateInputLabel} extra={<button className="link-button" onClick={()=>{const now=chineseNow();update(now)}}>回到今天</button>}><input aria-label="公历日期" type="date" value={s.solar} onChange={e=>update({solar:e.target.value})}/></Field>:<><Field label={dateInputLabel}><input aria-label="农历年份" type="number" min={MIN_YEAR} max={MAX_YEAR} value={s.lunar.year} onChange={e=>setLunar({year:Number(e.target.value)})}/></Field><div className="row"><Field label="农历月份"><select aria-label="农历月份" value={`${s.lunar.month}-${s.lunar.isLeap}`} onChange={e=>{const [month,leap]=e.target.value.split('-');setLunar({month:Number(month),isLeap:leap==='true'})}}>{months.map(m=><option key={`${m.month}-${m.isLeap}`} value={`${m.month}-${m.isLeap}`}>{m.label}</option>)}</select></Field><Field label="农历日期"><select aria-label="农历日期" value={s.lunar.day} onChange={e=>setLunar({day:Number(e.target.value)})}>{Array.from({length:currentMonth?.days||30},(_,i)=><option value={i+1} key={i}>{dayNames[i]}</option>)}</select></Field></div></>}
- <Field label="日程时间"><div className="segmented" role="group" aria-label="日程时间"><button type="button" aria-pressed={s.config.allDay} className={s.config.allDay?'active':''} onClick={()=>config({allDay:true})}>全天</button><button type="button" aria-pressed={!s.config.allDay} className={!s.config.allDay?'active':''} onClick={()=>config({allDay:false})}>指定时间</button></div></Field>{!s.config.allDay&&<Field label="时间 · 中国标准时间 UTC+8"><input aria-label="时间" type="time" value={s.time} onChange={e=>update({time:e.target.value})}/></Field>}<p className="helper">{s.config.allDay?'按中国标准时间转换日期，日程默认为全天。':'日期与时间按中国标准时间解释；导出时可设置事件开始和结束时间。'}</p>{conversion.error&&<div className="error" role="alert">{conversion.error}</div>}<div className="note"><Info size={16}/><span>支持农历 {MIN_YEAR}–{MAX_YEAR} 年。日期计算在浏览器中完成，无需上传任何信息。</span></div></section>
- <section className="card"><Heading icon={<Sparkles size={19}/>} title="转换结果" subtitle="日期对应的农历信息"/>{solarResult?<><div className="result-hero"><div className="result-label"><Sparkles size={14}/> {mode==='solar'?'对应农历':'对应公历'}</div><div className="result-date">{mode==='solar'?solarResult.lunarText:dateString(solarResult.solar).replaceAll('-',' / ')}</div><div className="result-sub">{mode==='solar'?`${solarResult.yearGanZhi}年 · ${solarResult.zodiac}年`:solarResult.lunarText}</div><div className="result-meta"><span className="pill">{solarResult.weekday}</span><span className="pill">{solarResult.lunar.isLeap?'闰月':'平月'}</span><span className="pill">{s.config.allDay?'全天':`${s.time} UTC+8`}</span></div></div><div className="detail-row"><span>公历日期</span><strong>{dateString(solarResult.solar)} · {solarResult.weekday}</strong></div><div className="detail-row"><span>农历日期</span><strong>{solarResult.lunarText}</strong></div><div className="detail-row"><span>干支与生肖</span><strong>{solarResult.yearGanZhi}年 · {solarResult.zodiac}</strong></div><div className="actions"><button className="primary" onClick={useFuture}>以此日期推算未来 <ArrowRight size={16}/></button><button className="secondary" onClick={()=>copy(`${dateString(solarResult.solar)} ${solarResult.weekday} · ${solarResult.lunarText} · ${solarResult.yearGanZhi}年 ${solarResult.zodiac}`)}><Copy size={15}/> 复制结果</button></div></>:<div className="empty">请输入有效日期以查看转换结果。</div>}</section></div>}
- {tab==='future'&&<div className="layout"><section className="card"><Heading icon={<CalendarRange size={19}/>} title="推算设置" subtitle="为每一年找到对应的公历日期"/><div className="row"><Field label="起始农历年份"><input aria-label="起始农历年份" type="number" min={MIN_YEAR} max={MAX_YEAR} value={s.startYear} onChange={e=>update({startYear:Number(e.target.value)})}/></Field><Field label="推算年数"><input aria-label="推算年数" type="number" min="1" max="100" value={s.years} onChange={e=>update({years:Number(e.target.value)})}/></Field></div><Field label="快捷选择"><div className="quick">{[1,3,5,10,20,30,50].map(n=><button key={n} className={s.years===n?'active':''} onClick={()=>update({years:n})}>{n} 年</button>)}</div></Field><div className="row"><Field label="农历月份"><select aria-label="推算农历月份" value={s.month} onChange={e=>update({month:Number(e.target.value)})}>{monthNames.map((name,i)=><option value={i+1} key={name}>{name}</option>)}</select></Field><Field label="农历日期"><select aria-label="推算农历日期" value={s.day} onChange={e=>update({day:Number(e.target.value)})}>{dayNames.map((name,i)=><option value={i+1} key={name}>{name}</option>)}</select></Field></div><div className="switch-row"><span>这是闰月日期</span><input type="checkbox" aria-label="这是闰月日期" checked={s.isLeap} onChange={e=>update({isLeap:e.target.checked})}/></div>{s.isLeap&&<Field label="目标年份没有相同闰月时"><select aria-label="闰月处理策略" value={s.leapPolicy} onChange={e=>update({leapPolicy:e.target.value as Settings['leapPolicy']})}><option value="skip">跳过该年份</option><option value="regular">使用普通同名月份</option></select></Field>}<Field label="农历三十不存在时"><select aria-label="日期不存在处理策略" value={s.dayPolicy} onChange={e=>update({dayPolicy:e.target.value as Settings['dayPolicy']})}><option value="skip">跳过该年份</option><option value="last">调整至该月最后一天</option></select></Field><div className="note"><Info size={16}/><span>每次从转换结果进入时默认使用当前农历年份，可手动修改。连续计算所选年数，包含起始年份，即使当年日期已过。特殊情况会在结果中说明。</span></div>{prediction.error&&<div className="error" role="alert">{prediction.error}</div>}</section>
- <section className="card"><div className="section-title"><div><h2>推算结果</h2><p>选择想要添加到日历的日期</p></div><span className="count">已选 {chosen.length} 项</span></div><p className="helper">成功推算 {valid.length} 个日期，跳过 {prediction.values.length-valid.length} 个年份。</p><div className="result-tools"><button className="link-button" onClick={()=>setSelected(new Set(valid.map(x=>x.year)))}>全选</button><button className="link-button" onClick={()=>setSelected(new Set())}>取消全选</button><button className="link-button" onClick={()=>copy(prediction.values.map(x=>x.info?`${x.year}：${dateString(x.info.solar)} ${x.info.weekday} ${x.info.lunarText}${x.reason?'（'+x.reason+'）':''}`:`${x.year}：跳过（${x.reason}）`).join('\n'))}>复制列表</button><div className="segmented" role="group" aria-label="结果视图"><button aria-label="列表视图" className={view==='list'?'active':''} onClick={()=>setView('list')}><List size={16}/></button><button aria-label="月历视图" className={view==='calendar'?'active':''} onClick={()=>setView('calendar')}><Grid2X2 size={15}/></button></div></div>
- {view==='list'?<div className="results">{prediction.values.map(item=><div className="result-item" key={item.year}><input type="checkbox" aria-label={`选择农历 ${item.year} 年`} disabled={!item.info} checked={selected.has(item.year)&&!!item.info} onChange={()=>toggle(item.year)}/><div><strong>{item.info?`${dateString(item.info.solar)} · ${item.info.weekday}`:`农历 ${item.year} 年`}</strong><small>{item.info?`农历 ${item.year} 年 · ${item.info.lunarText}`:''}{item.reason?` ${item.reason}`:''}</small></div><span className={`status ${item.status}`}>{item.status==='ok'?'已计算':item.status==='adjusted'?'已调整':'已跳过'}</span></div>)}{!prediction.values.length&&<div className="empty">设置有效的日期与年份后，即可查看结果。</div>}</div>:activeCalendar&&calDate?<><div className="calendar-head"><button aria-label="上一个结果" disabled={calendarYear===0} onClick={()=>setCalendarYear(x=>x-1)}><ChevronLeft size={16}/></button><strong>{calDate.year} 年 {calDate.month} 月</strong><button aria-label="下一个结果" disabled={calendarYear>=valid.length-1} onClick={()=>setCalendarYear(x=>x+1)}><ChevronRight size={16}/></button></div><div className="cal-grid">{weekdays.map(x=><span key={x}>{x}</span>)}{Array.from({length:firstDay},(_,i)=><span key={`empty${i}`}/>)}{Array.from({length:daysInMonth},(_,i)=>{const day=i+1;const event=day===calDate.day;return <button key={day} disabled={!event} aria-label={event?`${calDate.year}年${calDate.month}月${day}日，点击选择事件`:`${day}日`} className={`cal-day ${event?'event':''} ${event&&selected.has(activeCalendar.year)?'selected':''}`} onClick={()=>event&&toggle(activeCalendar.year)}>{day}</button>})}</div><div className="note"><CalendarDays size={16}/><span>{activeCalendar.info!.lunarText} · {activeCalendar.reason||'点击日期选择或取消选择'}</span></div></>:<div className="empty">没有可显示的日期。</div>}<div className="actions"><button className="primary wide" onClick={()=>setTab('export')} disabled={!chosen.length}>继续设置日历事件 <ArrowRight size={16}/></button></div></section></div>}
- {tab==='export'&&<div className="layout"><section className="card"><Heading icon={<Clock3 size={19}/>} title="事件设置" subtitle="为选中的日期创建日历事件"/><Field label="日程名称"><input aria-label="日程名称" placeholder="例如：妈妈的生日" value={s.config.title} maxLength={200} onChange={e=>config({title:e.target.value})}/></Field><Field label="日历名称"><input aria-label="日历名称" placeholder="例如：家人生日" value={s.config.calendarName} maxLength={200} onChange={e=>config({calendarName:e.target.value})}/></Field><p className="helper">日历名称会写入文件；导入已有日历时，显示名称由日历应用决定。</p><Field label="日程时间"><div className="segmented" role="group" aria-label="日程时间"><button type="button" aria-pressed={s.config.allDay} className={s.config.allDay?'active':''} onClick={()=>config({allDay:true})}>全天</button><button type="button" aria-pressed={!s.config.allDay} className={!s.config.allDay?'active':''} onClick={()=>config({allDay:false})}>指定时间</button></div></Field>{!s.config.allDay&&<><div className="row"><Field label="开始时间"><input aria-label="开始时间" type="time" value={s.config.startTime} onChange={e=>config({startTime:e.target.value})}/></Field><Field label="结束时间"><input aria-label="结束时间" type="time" value={s.config.endTime} onChange={e=>config({endTime:e.target.value})}/></Field></div><Field label="事件时区"><><input aria-label="事件时区" list="timezones" value={s.config.timeZone} onChange={e=>config({timeZone:e.target.value})}/><datalist id="timezones">{['Asia/Shanghai','Asia/Hong_Kong','Asia/Tokyo','Europe/London','Europe/Paris','America/New_York','America/Los_Angeles','UTC'].map(z=><option key={z} value={z}/>)}</datalist></></Field></>}<Field label="提醒"><select aria-label="提醒时间" value={s.config.reminderMinutes===null?'none':String([0,10,60,1440,4320,10080].includes(s.config.reminderMinutes)?s.config.reminderMinutes:'custom')} onChange={e=>config({reminderMinutes:e.target.value==='none'?null:e.target.value==='custom'?30:Number(e.target.value)})}><option value="none">不提醒</option><option value="0">事件发生时</option><option value="10">提前 10 分钟</option><option value="60">提前 1 小时</option><option value="1440">提前 1 天</option><option value="4320">提前 3 天</option><option value="10080">提前 7 天</option><option value="custom">自定义（分钟）</option></select></Field>{s.config.reminderMinutes!==null&&![0,10,60,1440,4320,10080].includes(s.config.reminderMinutes)&&<Field label="提前分钟数"><input type="number" aria-label="自定义提前分钟数" min="1" max="525600" value={s.config.reminderMinutes} onChange={e=>config({reminderMinutes:Number(e.target.value)})}/></Field>}<Field label="备注（可选）"><textarea aria-label="事件备注" placeholder="添加想要记住的事情" value={s.config.description} onChange={e=>config({description:e.target.value})}/></Field></section>
- <section className="card"><div className="section-title"><div><h2>导出预览</h2><p>日历：{s.config.calendarName.trim()||'未命名日历'} · 每个日期都会生成独立事件</p></div><span className="count">{chosen.length} 个事件</span></div>{chosen.length?<div className="results">{chosen.map(item=><div className="preview-item" key={item.year}><strong>{s.config.title.trim()||'未命名事件'}</strong><small>{dateString(item.info!.solar)} · {item.info!.weekday} · {s.config.allDay?'全天':`${s.config.startTime}–${s.config.endTime} ${s.config.timeZone}`}</small></div>)}</div>:<div className="empty">还没有选中日期。请先在“未来推算”中选择要导出的结果。</div>}{exportError&&<div className="error" role="alert">{exportError}</div>}<div className="actions"><button className="primary wide" onClick={download} disabled={!!exportError}><Download size={16}/> 导出 ICS 文件</button></div>{typeof navigator.share==='function'&&<div className="actions"><button className="secondary wide" onClick={share} disabled={!!exportError}><Share2 size={16}/> 分享 ICS 文件</button></div>}<div className="note"><Info size={16}/><span>ICS 是一次性导入文件，不会自动同步未来新增年份。可导入 Apple 日历、Google Calendar 或 Outlook。</span></div></section></div>}
- <footer className="footer"><span>✦</span> 把时间留给值得纪念的事 · 所有计算均在本地完成</footer></div></div>
+const steps = [
+  { key: 'convert', title: '日期转换', subtitle: '公历与农历双向换算' },
+  { key: 'future', title: '未来推算', subtitle: '找到每一年的纪念日' },
+  { key: 'export', title: '日历导出', subtitle: '添加到你的日历' },
+] as const
+const reminders = [{ value: 'none', label: '不提醒' }, { value: '0', label: '事件发生时' }, { value: '10', label: '提前 10 分钟' }, { value: '60', label: '提前 1 小时' }, { value: '1440', label: '提前 1 天' }, { value: '4320', label: '提前 3 天' }, { value: '10080', label: '提前 7 天' }]
+const reminderChoice = (minutes: number | null) => minutes === null ? 'none' : reminders.some(x => x.value === String(minutes)) ? String(minutes) : 'custom'
+const lunarDay = (l: Pick<LunarDate, 'month' | 'day' | 'isLeap'>) => `${l.isLeap ? '闰' : ''}${MONTH_NAMES[l.month - 1] ?? ''}${DAY_NAMES[l.day - 1] ?? ''}`
+const errorText = (error: unknown, fallback: string) => error instanceof Error ? error.message : fallback
+
+function Field({ id, label, children, hint, extra }: { id: string; label: string; children: React.ReactNode; hint?: string; extra?: React.ReactNode }) {
+  return <div className="field"><div className="field-label"><label htmlFor={id}>{label}</label>{extra}</div>{children}{hint && <p className="field-hint" id={`${id}-hint`}>{hint}</p>}</div>
 }
-createRoot(document.getElementById('root')!).render(<React.StrictMode><App/></React.StrictMode>)
-if (import.meta.env.PROD && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => { navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then(() => navigator.serviceWorker.ready).then(registration => { const assets = performance.getEntriesByType('resource').map(entry => entry.name).filter(url => new URL(url).origin === location.origin); registration.active?.postMessage({ assets }) }).catch(() => { /* Offline caching is optional. */ }) })
+function TimingChoice({ allDay, onChange }: { allDay: boolean; onChange(value: boolean): void }) {
+  return <fieldset className="field choice-field"><legend>日程时间</legend><div className="segmented"><button type="button" aria-pressed={allDay} className={allDay ? 'active' : ''} onClick={() => onChange(true)}>全天</button><button type="button" aria-pressed={!allDay} className={!allDay ? 'active' : ''} onClick={() => onChange(false)}>指定时间</button></div></fieldset>
+}
+function ErrorNotice({ children }: { children: React.ReactNode }) {
+  return <div className="notice error-notice" role="alert"><Info size={17} /><span>{children}</span></div>
+}
+function App() {
+  const [s, setS] = useState(loadSettings)
+  const [tab, setTab] = useState<Tab>('convert')
+  const [mode, setMode] = useState<'solar' | 'lunar'>('solar')
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [message, setMessage] = useState('')
+  const [reminderMode, setReminderMode] = useState(() => reminderChoice(s.config.reminderMinutes))
+  const mainRef = useRef<HTMLElement>(null)
+  const update = (patch: Partial<Settings>) => setS(value => ({ ...value, ...patch }))
+  const configure = (patch: Partial<IcsConfig>) => setS(value => ({ ...value, config: { ...value.config, ...patch } }))
+  const goTo = (next: Tab) => {
+    setTab(next)
+    requestAnimationFrame(() => {
+      mainRef.current?.focus({ preventScroll: true })
+      window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+    })
+  }
+
+  useEffect(() => { try { localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(s)) } catch { /* Local storage may be disabled. */ } }, [s])
+  useEffect(() => {
+    const media = matchMedia('(prefers-color-scheme: dark)')
+    const apply = () => document.documentElement.classList.toggle('dark', s.theme === 'dark' || (s.theme === 'system' && media.matches))
+    apply()
+    media.addEventListener('change', apply)
+    return () => media.removeEventListener('change', apply)
+  }, [s.theme])
+  useEffect(() => {
+    if (!message) return
+    const timer = setTimeout(() => setMessage(''), 4500)
+    return () => clearTimeout(timer)
+  }, [message])
+
+  const conversion = useMemo(() => {
+    try {
+      if (!s.config.allDay && !/^([01]\d|2[0-3]):[0-5]\d$/.test(s.time)) throw Error('请输入有效时间。')
+      return { value: mode === 'solar' ? solarToLunar(parseSolar(s.solar)) : lunarToSolar(s.lunar), error: '' }
+    } catch (error) { return { value: null, error: errorText(error, '日期无效，请检查输入。') } }
+  }, [s.solar, s.lunar, s.time, s.config.allDay, mode])
+  const months = useMemo(() => { try { return getLunarMonths(s.lunar.year) } catch { return [] } }, [s.lunar.year])
+  const prediction = useMemo(() => {
+    try { return { values: predictDates(s), error: '' } }
+    catch (error) { return { values: [], error: errorText(error, '请检查推算设置。') } }
+  }, [s.startYear, s.month, s.day, s.isLeap, s.years, s.leapPolicy, s.dayPolicy])
+  useEffect(() => { setSelected(new Set(prediction.values.filter(x => x.info).map(x => x.year))) }, [prediction])
+  const valid = useMemo(() => prediction.values.filter(x => x.info), [prediction])
+  const chosen = useMemo(() => valid.filter(x => selected.has(x.year)), [valid, selected])
+  const events = useMemo(() => chosen.map(x => ({ date: dateString(x.info!.solar) })), [chosen])
+  const exportError = useMemo(() => {
+    try { generateICS(events, s.config); return '' }
+    catch (error) { return errorText(error, '无法生成日历文件。') }
+  }, [events, s.config])
+
+  function setLunar(patch: Partial<LunarDate>) {
+    const next = { ...s.lunar, ...patch }
+    try {
+      const options = getLunarMonths(next.year)
+      let month = options.find(x => x.month === next.month && x.isLeap === next.isLeap)
+      if (!month) { month = options.find(x => x.month === next.month && !x.isLeap); next.isLeap = false }
+      if (month) next.day = Math.min(next.day, month.days)
+    } catch { /* Keep the input visible for validation. */ }
+    update({ lunar: next })
+  }
+  function switchMode(next: 'solar' | 'lunar') {
+    if (conversion.value) update(next === 'lunar' ? { lunar: conversion.value.lunar } : { solar: dateString(conversion.value.solar) })
+    setMode(next)
+  }
+  function today() {
+    const now = chineseNow()
+    try { update({ ...now, lunar: solarToLunar(parseSolar(now.solar)).lunar }) }
+    catch (error) { setMessage(errorText(error, '当前日期超出支持范围。')) }
+  }
+  function useFuture() {
+    if (!conversion.value) return
+    try { update(anniversaryRuleFromDate(conversion.value.lunar, parseSolar(chineseNow().solar))); goTo('future') }
+    catch (error) { setMessage(errorText(error, '当前日期超出支持范围。')) }
+  }
+  function toggle(year: number) {
+    setSelected(previous => { const next = new Set(previous); if (next.has(year)) next.delete(year); else next.add(year); return next })
+  }
+  async function copy(text: string) {
+    try { await navigator.clipboard.writeText(text); setMessage('已复制到剪贴板') }
+    catch { setMessage('复制失败，请检查浏览器权限。') }
+  }
+  const fileName = () => `${s.config.title.replace(/[\\/:*?"<>|]/g, '_').trim() || '农历日历'}_${chosen[0]?.year}-${chosen.at(-1)?.year}.ics`
+  function download() {
+    try {
+      const url = URL.createObjectURL(new Blob([generateICS(events, s.config)], { type: 'text/calendar;charset=utf-8' }))
+      const link = document.createElement('a')
+      link.href = url; link.download = fileName(); link.click()
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+      setMessage(`已生成 ${chosen.length} 个日程的日历文件`)
+    } catch (error) { setMessage(errorText(error, '导出失败。')) }
+  }
+  async function share() {
+    try {
+      const file = new File([generateICS(events, s.config)], fileName(), { type: 'text/calendar' })
+      if (!navigator.canShare?.({ files: [file] })) throw Error('当前浏览器不支持分享文件，请使用下载。')
+      await navigator.share({ files: [file], title: s.config.title })
+    } catch (error) { if (error instanceof Error && error.name === 'AbortError') return; setMessage(errorText(error, '分享失败，请使用下载。')) }
+  }
+
+  const result = conversion.value
+  const currentMonth = months.find(x => x.month === s.lunar.month && x.isLeap === s.lunar.isLeap)
+  const first = chosen[0]?.info
+  const reminderLabel = reminders.find(x => x.value === String(s.config.reminderMinutes ?? 'none'))?.label ?? (Number.isFinite(s.config.reminderMinutes) ? `提前 ${s.config.reminderMinutes} 分钟` : '待设置')
+  return <div className="app-shell">
+    <header className="app-header">
+      <div className="brand"><span className="brand-mark"><Moon size={23} strokeWidth={1.8} /></span><div><h1>农历日历</h1><p>记住每一年的重要日子</p></div></div>
+      <div className="header-tools"><span className="today-label">今天 {chineseNow().solar.replaceAll('-', '.')}</span><div className="theme-control"><SunMoon size={17} /><select aria-label="外观设置" value={s.theme} onChange={e => update({ theme: e.target.value as Settings['theme'] })}><option value="system">跟随系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div></div>
+    </header>
+    <nav className="workflow" aria-label="主要功能">{steps.map((step, index) => <button key={step.key} className={`workflow-step ${tab === step.key ? 'active' : ''}`} aria-current={tab === step.key ? 'step' : undefined} onClick={() => goTo(step.key)}><span className="step-number">{index + 1}</span><span className="step-text"><strong>{step.title}</strong><small>{step.subtitle}</small></span>{index < 2 && <span className="step-arrow"><ChevronDown size={15} /></span>}</button>)}</nav>
+    <main ref={mainRef} tabIndex={-1} className="workspace">
+      {tab === 'convert' && <div className="workspace-grid">
+        <section className="panel settings-panel" aria-labelledby="convert-heading">
+          <div className="panel-header"><div><p className="eyebrow">选择日期</p><h2 id="convert-heading">你想记住哪一天？</h2></div><CalendarDays size={22} className="heading-icon" /></div>
+          <div className="segmented" role="group" aria-label="转换方向"><button aria-pressed={mode === 'solar'} className={mode === 'solar' ? 'active' : ''} onClick={() => switchMode('solar')}>公历 → 农历</button><button aria-pressed={mode === 'lunar'} className={mode === 'lunar' ? 'active' : ''} onClick={() => switchMode('lunar')}>农历 → 公历</button></div>
+          {mode === 'solar' ? <Field id="solar-date" label="公历日期" extra={<button className="text-button" onClick={today}>今天</button>}><input id="solar-date" type="date" min={dateString(MIN_SOLAR)} max={dateString(MAX_SOLAR)} value={s.solar} onInput={e => update({ solar: e.currentTarget.value })} onChange={e => update({ solar: e.target.value })} /></Field> : <>
+            <Field id="lunar-year" label="农历年份" extra={<button className="text-button" onClick={today}>今天</button>}><input id="lunar-year" type="number" min={MIN_YEAR} max={MAX_YEAR} value={s.lunar.year || ''} onChange={e => setLunar({ year: Number(e.target.value) })} /></Field>
+            <div className="field-row"><Field id="lunar-month" label="月份"><select id="lunar-month" value={`${s.lunar.month}-${s.lunar.isLeap}`} onChange={e => { const [month, leap] = e.target.value.split('-'); setLunar({ month: Number(month), isLeap: leap === 'true' }) }}>{months.map(m => <option key={`${m.month}-${m.isLeap}`} value={`${m.month}-${m.isLeap}`}>{m.label}</option>)}</select></Field><Field id="lunar-day" label="日期"><select id="lunar-day" value={s.lunar.day} onChange={e => setLunar({ day: Number(e.target.value) })}>{DAY_NAMES.slice(0, currentMonth?.days ?? 30).map((day, i) => <option value={i + 1} key={day}>{day}</option>)}</select></Field></div>
+          </>}
+          <div className="form-divider" />
+          <TimingChoice allDay={s.config.allDay} onChange={allDay => configure({ allDay })} />
+          {!s.config.allDay && <Field id="conversion-time" label="换算时间" hint="按中国标准时间显示；日程开始和结束时间可在导出时设置。"><input id="conversion-time" aria-describedby="conversion-time-hint" type="time" value={s.time} onInput={e => update({ time: e.currentTarget.value })} onChange={e => update({ time: e.target.value })} /></Field>}
+          {conversion.error && <ErrorNotice>{conversion.error}</ErrorNotice>}
+          <p className="form-footnote"><Clock3 size={14} />日期基准：中国标准时间 UTC+8</p>
+        </section>
+        <section className="panel conversion-panel" aria-label="转换结果">
+          {result ? <>
+            <div className="panel-header"><span className="eyebrow">转换结果</span><span className="badge"><Check size={13} />已换算</span></div>
+            <div className="date-result"><p className="result-kicker">{mode === 'solar' ? `${result.lunar.year} 年 · 农历` : `${result.solar.year} 年 · 公历`}</p><h2>{mode === 'solar' ? lunarDay(result.lunar) : `${result.solar.month} 月 ${result.solar.day} 日`}</h2><p className="result-context">{result.yearGanZhi}年 · {result.zodiac}年 <span>／</span> {result.weekday}</p><div className="result-chips"><span>{result.lunar.isLeap ? '闰月' : '非闰月'}</span><span>{s.config.allDay ? '全天' : `${s.time} UTC+8`}</span></div></div>
+            <dl className="date-reference"><div><dt>{mode === 'solar' ? '对应公历' : '对应农历'}</dt><dd>{mode === 'solar' ? dateString(result.solar) : `${result.lunar.year} 年 ${lunarDay(result.lunar)}`}</dd></div></dl>
+            <div className="conversion-actions"><button className="button button-primary" onClick={useFuture}>以此日期推算未来 <ArrowRight size={17} /></button><button className="button button-secondary" onClick={() => copy(`${dateString(result.solar)} ${result.weekday} · ${result.lunarText} · ${result.yearGanZhi}年 ${result.zodiac}`)}><Copy size={16} />复制</button></div>
+            <p className="under-action">生日或纪念日？下一步可查看未来每年的对应日期。</p>
+          </> : <div className="empty-state"><CalendarDays size={32} /><h2>等待有效日期</h2><p>请检查左侧日期，再查看转换结果。</p></div>}
+        </section>
+      </div>}
+      {tab === 'future' && <div className="workspace-grid">
+        <section className="panel settings-panel" aria-labelledby="future-heading">
+          <div className="panel-header"><div><p className="eyebrow">设置规则</p><h2 id="future-heading">每年农历的这一天</h2></div><CalendarRange size={22} className="heading-icon" /></div>
+          <div className="field-row"><Field id="future-month" label="农历月份"><select id="future-month" value={s.month} onChange={e => update({ month: Number(e.target.value) })}>{MONTH_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}</select></Field><Field id="future-day" label="农历日期"><select id="future-day" value={s.day} onChange={e => update({ day: Number(e.target.value) })}>{DAY_NAMES.map((name, i) => <option key={name} value={i + 1}>{name}</option>)}</select></Field></div>
+          <label className="check-row"><input type="checkbox" checked={s.isLeap} onChange={e => update({ isLeap: e.target.checked })} /><span>这是闰月日期</span></label>
+          <div className="form-divider" />
+          <div className="field-row"><Field id="start-year" label="起始农历年份"><input id="start-year" type="number" min={MIN_YEAR} max={MAX_YEAR} value={s.startYear || ''} onChange={e => update({ startYear: Number(e.target.value) })} /></Field><Field id="year-count" label="推算年数"><input id="year-count" type="number" min="1" max="100" value={s.years || ''} onChange={e => update({ years: Number(e.target.value) })} /></Field></div>
+          <div className="year-shortcuts" aria-label="推算年数快捷选择">{[1, 3, 5, 10, 20, 30, 50].map(years => <button key={years} aria-pressed={s.years === years} className={s.years === years ? 'active' : ''} onClick={() => update({ years })}>{years} 年</button>)}</div>
+          <p className="field-hint">包含起始年。{!prediction.error && `${s.startYear} 至 ${s.startYear + s.years - 1} 年，共 ${s.years} 个农历年。`}</p>
+          <details className="disclosure rules-disclosure" key={s.isLeap ? 'leap' : 'normal'} open={s.isLeap || undefined}><summary><span>特殊日期处理<small>{s.leapPolicy === 'skip' && s.dayPolicy === 'skip' ? '默认跳过无效日期' : '已设置替代日期'}</small></span><ChevronDown size={17} /></summary><div className="disclosure-content">
+            {s.isLeap && <Field id="leap-policy" label="没有相同闰月时"><select id="leap-policy" value={s.leapPolicy} onChange={e => update({ leapPolicy: e.target.value as Settings['leapPolicy'] })}><option value="skip">跳过该年份</option><option value="regular">使用普通同名月份</option></select></Field>}
+            <Field id="day-policy" label="农历三十不存在时"><select id="day-policy" value={s.dayPolicy} onChange={e => update({ dayPolicy: e.target.value as Settings['dayPolicy'] })}><option value="skip">跳过该年份</option><option value="last">使用该月最后一天</option></select></Field><p className="field-hint">所有跳过和调整都会在结果中说明。</p>
+          </div></details>
+          {prediction.error && <ErrorNotice>{prediction.error}</ErrorNotice>}
+          <p className="form-footnote">从转换结果进入时，默认从当前农历年开始；已过日期也会列出。</p>
+        </section>
+        <section className="panel results-panel" aria-label="未来推算结果"><PredictionResults results={prediction.values} selected={selected} onToggle={toggle} onSelectAll={() => setSelected(new Set(valid.map(x => x.year)))} onClear={() => setSelected(new Set())} onCopy={() => copy(prediction.values.map(x => x.info ? `${x.year}：${dateString(x.info.solar)} ${x.info.weekday} ${x.info.lunarText}${x.reason ? `（${x.reason}）` : ''}` : `${x.year}：跳过（${x.reason}）`).join('\n'))} onContinue={() => goTo('export')} /></section>
+      </div>}
+      {tab === 'export' && <div className="workspace-grid">
+        <section className="panel settings-panel" aria-labelledby="export-heading">
+          <div className="panel-header"><div><p className="eyebrow">日程设置</p><h2 id="export-heading">给纪念日一个名字</h2></div><CalendarDays size={22} className="heading-icon" /></div>
+          <Field id="event-title" label="日程名称"><input id="event-title" value={s.config.title} placeholder="例如：妈妈的生日" maxLength={200} onChange={e => configure({ title: e.target.value })} /></Field>
+          <Field id="calendar-name" label="日历名称" hint="导入已有日历时，以目标日历的名称为准。"><input id="calendar-name" aria-describedby="calendar-name-hint" value={s.config.calendarName} placeholder="例如：家人纪念日" maxLength={200} onChange={e => configure({ calendarName: e.target.value })} /></Field>
+          <div className="form-divider" />
+          <TimingChoice allDay={s.config.allDay} onChange={allDay => configure({ allDay })} />
+          {!s.config.allDay && <><div className="field-row"><Field id="start-time" label="开始时间"><input id="start-time" type="time" value={s.config.startTime} onInput={e => configure({ startTime: e.currentTarget.value })} onChange={e => configure({ startTime: e.target.value })} /></Field><Field id="end-time" label="结束时间"><input id="end-time" type="time" value={s.config.endTime} onInput={e => configure({ endTime: e.currentTarget.value })} onChange={e => configure({ endTime: e.target.value })} /></Field></div><Field id="event-zone" label="事件时区"><input id="event-zone" list="timezones" value={s.config.timeZone} onChange={e => configure({ timeZone: e.target.value })} /><datalist id="timezones">{['Asia/Shanghai', 'Asia/Hong_Kong', 'Asia/Tokyo', 'Europe/London', 'Europe/Paris', 'America/New_York', 'America/Los_Angeles', 'UTC'].map(zone => <option key={zone} value={zone} />)}</datalist></Field></>}
+          <Field id="reminder" label="提醒"><select id="reminder" value={reminderMode} onChange={e => { const choice = e.target.value; setReminderMode(choice); configure({ reminderMinutes: choice === 'none' ? null : choice === 'custom' ? 30 : Number(choice) }) }}>{reminders.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}<option value="custom">自定义提醒</option></select></Field>
+          {reminderMode === 'custom' && <Field id="custom-reminder" label="提前分钟数"><input id="custom-reminder" type="number" min="0" max="5256000" value={Number.isFinite(s.config.reminderMinutes) ? s.config.reminderMinutes! : ''} onChange={e => configure({ reminderMinutes: e.target.value === '' ? NaN : Number(e.target.value) })} /></Field>}
+          <details className="disclosure" open={s.config.description ? true : undefined}><summary><span>备注<small>可选</small></span><ChevronDown size={17} /></summary><div className="disclosure-content"><Field id="description" label="事件备注"><textarea id="description" placeholder="想在这一天记住的事…" value={s.config.description} onChange={e => configure({ description: e.target.value })} /></Field></div></details>
+        </section>
+        <section className="panel export-panel" aria-label="导出预览">
+          <div className="panel-header"><div><p className="eyebrow">准备导出</p><h2>将 {chosen.length} 个日程加入日历</h2></div><span className="format-label">ICS</span></div>
+          {first ? <>
+            <div className="event-preview"><div className="event-date"><span>{first.solar.month} 月</span><strong>{first.solar.day}</strong><small>{first.weekday}</small></div><div className="event-content"><span className="event-calendar">{s.config.calendarName.trim() || '未命名日历'}</span><h3>{s.config.title.trim() || '未命名日程'}</h3><p>{first.solar.year} 年 · {lunarDay(first.lunar)}</p><span className="event-time">{s.config.allDay ? '全天' : `${s.config.startTime} – ${s.config.endTime}`}</span></div></div>
+            <dl className="export-summary"><div><dt><CalendarRange size={16} />日期范围</dt><dd>农历 {chosen[0].year}–{chosen.at(-1)!.year} 年</dd></div><div><dt><Bell size={16} />提醒</dt><dd>{reminderLabel}</dd></div>{!s.config.allDay && <div><dt><Clock3 size={16} />时区</dt><dd>{s.config.timeZone}</dd></div>}</dl>
+          </> : <div className="empty-state"><CalendarRange size={30} /><h3>还没有选中日期</h3><p>先到未来推算，选择要加入日历的日期。</p><button className="button button-secondary" onClick={() => goTo('future')}>返回选择日期</button></div>}
+          {exportError && chosen.length > 0 && <ErrorNotice>{exportError}</ErrorNotice>}
+          <div className="export-actions"><button className="button button-primary" disabled={!!exportError} onClick={download}><Download size={18} />下载 ICS 文件{chosen.length > 0 && <span>· {chosen.length} 个日程</span>}</button>{typeof navigator.share === 'function' && <button className="button button-secondary" disabled={!!exportError} onClick={share}><Share2 size={17} />分享</button>}</div>
+          <p className="under-action">支持 Apple 日历、Google Calendar 和 Outlook</p>
+          {chosen.length > 0 && <details className="disclosure date-details"><summary><span>查看全部 {chosen.length} 个日期</span><ChevronDown size={17} /></summary><div className="date-preview-list">{chosen.map(item => <div key={item.year}><span>{dateString(item.info!.solar)} <small>{item.info!.weekday}</small></span><span>{lunarDay(item.info!.lunar)}</span></div>)}</div></details>}
+          <div className="notice export-notice"><Info size={16} /><p>这是一次性导入文件，未来新增年份不会自动同步。</p></div>
+          <button className="text-button back-button" onClick={() => goTo('future')}><ArrowLeft size={15} />返回调整日期</button>
+        </section>
+      </div>}
+    </main>
+    <footer className="app-footer"><span><LockKeyhole size={13} />所有计算在本地完成</span><span>支持农历 {MIN_YEAR}–{MAX_YEAR} 年</span></footer>
+    {message && <div className="toast" role="status"><Check size={17} /><span>{message}</span><button aria-label="关闭提示" onClick={() => setMessage('')}><X size={16} /></button></div>}
+  </div>
+}
+
+const root = createRoot(document.getElementById('root')!)
+root.render(<React.StrictMode><App /></React.StrictMode>)
+if (import.meta.hot) import.meta.hot.dispose(() => root.unmount())
+if (import.meta.env.PROD && 'serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then(() => navigator.serviceWorker.ready).then(registration => {
+      const assets = performance.getEntriesByType('resource').map(entry => entry.name).filter(url => new URL(url).origin === location.origin)
+      registration.active?.postMessage({ assets })
+    }).catch(() => { /* Offline caching is optional. */ })
+  })
 }
